@@ -9,10 +9,6 @@ env:
 on:
   workflow_dispatch:
 
-defaults:
-  run:
-    working-directory: terraform-artifacts/|workspace-name|
-
 jobs:
   setup:
     runs-on: ubuntu-latest
@@ -21,3 +17,7 @@ jobs:
     - uses: actions/checkout@v3
 
     - uses: hashicorp/setup-terraform@v2
+
+    - name: Terraform Init
+      run: |
+          terraform init --backend-config="container_name=tfstate-|workspace-name|-np" # To use the production state file, use container_name=tfstate-|workspace-name|-p
