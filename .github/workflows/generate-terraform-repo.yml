@@ -2,16 +2,12 @@ name: Scaffold DevOps Module 3 Terraform Git Repository
 
 on:
   workflow_dispatch:
-    inputs:
-      workspace-name:
-        description: 'Name for the workspace to setup. This should be unique'
-        required: true 
-        type: string
 
 env:
   ARM_TENANT_ID: '653fcdc1-a3dc-4588-96c4-ef684fc1232b'  
   STORAGE_ACCOUNT: sttfdevopsprimer01
-  CREATE_REPOSITORY_NAME: ${{ format('CoreBTS/{0}', inputs.workspace-name) }}
+  WORKSPACE_NAME: ${{ format('devops-primer-mod3-{0}', github.actor) }}
+  CREATE_REPOSITORY_NAME: ${{ format('CoreBTS/{0}', env.WORKSPACE_NAME) }}
 
 jobs:
   create-repo:
@@ -33,7 +29,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ steps.generate_token.outputs.token }}" \
             https://api.github.com/orgs/CoreBTS/repos \
-            -d '{ "name":"${{ inputs.workspace-name }}", "private": true, "auto_init": true }'
+            -d '{ "name":"${{ env.WORKSPACE_NAME }}", "private": true, "auto_init": true }'
 
     - name: Get Public Key for Created Repo
       id: public_key
@@ -117,18 +113,22 @@ jobs:
         token: ${{ steps.generate_token.outputs.token }}      
         path: course    
 
-    - name: Create Main.tf
+    - name: Create backends.tf
       run: |
-        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/main.tf.template > ./new_repo/main.tf
+        sed s/\|workspace-name\|/${{ env.WORKSPACE_NAME }}/g ./source/templates/backends.tf.template > ./new_repo/backends.tf
+
+    - name: Create main.tf
+      run: |
+        echo "# main.tf" > ./new_repo/main.tf        
 
     - name: Create workflow file
       run: |
         mkdir -p ./new_repo/.github/workflows
-        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/terraform-deploy.yml.template > ./new_repo/.github/workflows/terraform-deploy.yml
+        sed s/\|workspace-name\|/${{ env.WORKSPACE_NAME }}/g ./source/templates/terraform-deploy.yml.template > ./new_repo/.github/workflows/terraform-deploy.yml
 
     - name: Update README
       run: |
-        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/README.md.template > ./new_repo/README.md
+        sed s/\|workspace-name\|/${{ env.WORKSPACE_NAME }}/g ./source/templates/README.md.template > ./new_repo/README.md
 
     - name: Copy instructions
       run: |
@@ -159,8 +159,8 @@ jobs:
 
     - name: Create nonprod Terraform State Container
       run: |
-        az storage container create --name "tfstate-${{ inputs.workspace-name }}-np" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login
+        az storage container create --name "tfstate-${{ env.WORKSPACE_NAME }}-np" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login
 
     - name: Create prod Terraform State Container
       run: |
-        az storage container create --name "tfstate-${{ inputs.workspace-name }}-p" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login        
+        az storage container create --name "tfstate-${{ env.WORKSPACE_NAME }}-p" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login        
