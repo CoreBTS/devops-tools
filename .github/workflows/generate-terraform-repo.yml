@@ -7,7 +7,7 @@ env:
   ARM_TENANT_ID: '653fcdc1-a3dc-4588-96c4-ef684fc1232b'  
   STORAGE_ACCOUNT: sttfdevopsprimer01
   WORKSPACE_NAME: ${{ format('devops-primer-mod3-{0}', github.actor) }}
-  CREATE_REPOSITORY_NAME: ${{ format('CoreBTS/{0}', env.WORKSPACE_NAME) }}
+  CREATE_REPOSITORY_NAME: ${{ format('CoreBTS/devops-primer-mod3-{0}', github.actor) }}
 
 jobs:
   create-repo:
