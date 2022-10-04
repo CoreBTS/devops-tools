@@ -1,0 +1,25 @@
+name: Set Repo Secret
+description: Sets a Repo Secret
+inputs:
+  secret-name:
+    description: The secret name
+  secret-value:
+    description: The secret value
+  public-key:
+    description: The public key value
+  public-key-id:
+    description: The public key id
+  repo-name:
+    description: The org/repo name
+  github-token:
+    description: The GitHub token for authentication
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
+  args:
+    - ${{ inputs.repo-name }}
+    - ${{ inputs.public-key }}
+    - ${{ inputs.public-key-id }}
+    - ${{ inputs.secret-name }}    
+    - ${{ inputs.secret-value }}    
+    - ${{ inputs.github-token }}       

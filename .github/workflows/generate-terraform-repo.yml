@@ -11,14 +11,16 @@ on:
 env:
   ARM_TENANT_ID: '653fcdc1-a3dc-4588-96c4-ef684fc1232b'  
   STORAGE_ACCOUNT: sttfdevopsprimer01
-  CREATE_REPOSITORY_NAME: ${{ format("CoreBTS/{0}", inputs.workspace-name) }}
+  CREATE_REPOSITORY_NAME: ${{ format('CoreBTS/{0}', inputs.workspace-name) }}
 
 jobs:
   create-repo:
     runs-on: ubuntu-latest
+    environment: main
 
     steps:
-  
+    - uses: actions/checkout@v3 
+
     - uses: tibdex/github-app-token@v1
       id: generate_token
       with:
@@ -31,10 +33,63 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${{ steps.generate_token.outputs.token }}" \
             https://api.github.com/orgs/CoreBTS/repos \
-            -d '{ "name":"${{ inputs.workspace-name }}", "private": true }'
+            -d '{ "name":"${{ inputs.workspace-name }}", "private": true, "auto_init": true }'
+
+    - name: Get Public Key for Created Repo
+      id: public_key
+      run: |
+        PUB_KEY=$(curl \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ steps.generate_token.outputs.token }}" \
+            https://api.github.com/repos/${{ env.CREATE_REPOSITORY_NAME }}/actions/secrets/public-key | jq -r ".key")
+        PUB_KEY_ID=$(curl \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ steps.generate_token.outputs.token }}" \
+            https://api.github.com/repos/${{ env.CREATE_REPOSITORY_NAME }}/actions/secrets/public-key | jq -r ".key_id")      
+
+        echo "Public Key: $PUB_KEY" 
+        echo "::set-output name=REPO_PUBLIC_KEY::${PUB_KEY}"
+        echo "::set-output name=REPO_PUBLIC_KEY_ID::${PUB_KEY_ID}"
+    - name: Set Repo Secret - ARM_CLIENT_ID
+      uses: ./.github/actions/set-repo-secret
+      with:
+        secret-name: ARM_CLIENT_ID
+        secret-value: ${{ secrets.ARM_CLIENT_ID }}
+        public-key: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY }}
+        public-key-id: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY_ID }}
+        repo-name: ${{ env.CREATE_REPOSITORY_NAME }}
+        github-token: ${{ steps.generate_token.outputs.token }}
+    - name: Set Repo Secret - ARM_CLIENT_SECRET
+      uses: ./.github/actions/set-repo-secret
+      with:
+        secret-name: ARM_CLIENT_SECRET
+        secret-value: ${{ secrets.ARM_CLIENT_SECRET }}
+        public-key: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY }}
+        public-key-id: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY_ID }}
+        repo-name: ${{ env.CREATE_REPOSITORY_NAME }}
+        github-token: ${{ steps.generate_token.outputs.token }}        
+    - name: Set Repo Secret - ARM_SUBSCRIPTION_ID
+      uses: ./.github/actions/set-repo-secret
+      with:
+        secret-name: ARM_SUBSCRIPTION_ID
+        secret-value: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+        public-key: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY }}
+        public-key-id: ${{ steps.public_key.outputs.REPO_PUBLIC_KEY_ID }}
+        repo-name: ${{ env.CREATE_REPOSITORY_NAME }}
+        github-token: ${{ steps.generate_token.outputs.token }}       
+
+    - name: Set Repo Admin
+      run: |
+        curl \
+            -X PUT \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ steps.generate_token.outputs.token }}" \
+            https://api.github.com/repos/${{ env.CREATE_REPOSITORY_NAME }}/collaborators/${{ github.actor }} \
+            -d '{"permission":"admin"}'             
 
   populate-templates:
     runs-on: ubuntu-latest
+    needs: create-repo
 
     steps:
     - uses: tibdex/github-app-token@v1
@@ -43,20 +98,69 @@ jobs:
         app_id: ${{ secrets.APP_ID }}
         private_key: ${{ secrets.APP_PRIVATE_KEY }}       
 
-    - uses: actions/checkout@v3
+    - name: Checkout new repository      
+      uses: actions/checkout@v3
       with:
         repository: ${{ env.CREATE_REPOSITORY_NAME }}
         token: ${{ steps.generate_token.outputs.token }}
         path: new_repo
 
-    - uses: actions/checkout@v3
+    - name: Checkout templates repository
+      uses: actions/checkout@v3
       with:
-        path: templates        
+        path: source        
 
+    - name: Checkout course repository
+      uses: actions/checkout@v3
+      with:
+        repository: CoreBTS/devops-primer
+        token: ${{ steps.generate_token.outputs.token }}      
+        path: course    
 
-    - run: |
-        ls ./templates
+    - name: Create Main.tf
+      run: |
+        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/main.tf.template > ./new_repo/main.tf
 
-    - run: |
-        ls ./new_repo          
+    - name: Create workflow file
+      run: |
+        mkdir -p ./new_repo/.github/workflows
+        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/terraform-deploy.yml.template > ./new_repo/.github/workflows/terraform-deploy.yml
 
+    - name: Update README
+      run: |
+        sed s/\|workspace-name\|/${{ inputs.workspace-name }}/g ./source/templates/README.md.template > ./new_repo/README.md
+
+    - name: Copy instructions
+      run: |
+        cat ./course/course-material/module3-e2e-automation/e2e-automation.md > ./new_repo/instructions.md              
+
+    - name: Commit changes
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        repository: ./new_repo
+        commit_message: Scaffold starter files for DevOps Primer Module 3
+
+  setup-terraform-azure-backends:
+    runs-on: ubuntu-latest
+    needs: create-repo
+
+    steps:
+    - uses: actions/checkout@v3 
+
+    - name: Login to Azure
+      uses: Azure/login@v1
+      with:
+        creds: '{
+          "clientId": "${{ secrets.ARM_CLIENT_ID }}",
+          "clientSecret": "${{ secrets.ARM_CLIENT_SECRET }}",
+          "subscriptionId": "${{ secrets.ARM_SUBSCRIPTION_ID }}",
+          "tenantId": "${{ env.ARM_TENANT_ID }}"
+          }'
+
+    - name: Create nonprod Terraform State Container
+      run: |
+        az storage container create --name "tfstate-${{ inputs.workspace-name }}-np" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login
+
+    - name: Create prod Terraform State Container
+      run: |
+        az storage container create --name "tfstate-${{ inputs.workspace-name }}-p" --account-name ${{ env.STORAGE_ACCOUNT }} --auth-mode login        
