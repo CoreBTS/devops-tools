@@ -6,7 +6,7 @@ terraform {
   backend "azurerm" {
     resource_group_name  = "rg-devopsprimer-shared-01"
     storage_account_name = "sttfdevopsprimer01"
-    container_name       = "tfstate-|workspace-name|"
+    container_name       = "" # this value is overridden in the terraform init command as part of the GHA workflow
     key                  = "terraform.tfstate"
   }
 }
